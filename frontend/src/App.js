@@ -91,10 +91,11 @@ const AuthCallback = () => {
 
 // Protected Route for Admin
 const ProtectedRoute = ({ children }) => {
-  const { user, isLoading, checkAuth } = useAuth();
+  const { checkAuth } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isAuthenticated, setIsAuthenticated] = useState(location.state?.user ? true : null);
+  const hasChecked = React.useRef(false);
   
   useEffect(() => {
     if (location.state?.user) {
@@ -102,18 +103,26 @@ const ProtectedRoute = ({ children }) => {
       return;
     }
     
+    if (hasChecked.current) return;
+    hasChecked.current = true;
+    
     const verify = async () => {
-      const authUser = await checkAuth();
-      if (authUser && authUser.role === "admin") {
-        setIsAuthenticated(true);
-      } else {
+      try {
+        const authUser = await checkAuth();
+        if (authUser && authUser.role === "admin") {
+          setIsAuthenticated(true);
+        } else {
+          setIsAuthenticated(false);
+          navigate("/login", { replace: true });
+        }
+      } catch (error) {
         setIsAuthenticated(false);
         navigate("/login", { replace: true });
       }
     };
     
     verify();
-  }, [checkAuth, navigate, location.state]);
+  }, []);
   
   if (isAuthenticated === null) {
     return (
