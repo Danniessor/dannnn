@@ -1,0 +1,132 @@
+{
+  "design_system": {
+    "brand_identity": {
+      "name": "Rina Visuals",
+      "essence": "Warm Minimalist Luxury",
+      "core_values": ["Timeless", "Emotional", "Premium Fun"],
+      "personality": "The sophisticated friend who throws the best parties."
+    },
+    "typography": {
+      "headings": {
+        "font_family": "Cormorant Garamond, serif",
+        "weights": ["Light (300)", "Regular (400)", "Medium (500)"],
+        "usage": "Use for all H1-H3. H1 should be massive (text-5xl to text-7xl). H3 (text-2xl) for card titles.",
+        "letter_spacing": "tracking-tight for large text",
+        "line_height": "leading-none"
+      },
+      "body": {
+        "font_family": "Montserrat, sans-serif",
+        "weights": ["Light (300)", "Regular (400)"],
+        "usage": "Use for paragraphs, UI elements, and navigation.",
+        "letter_spacing": "tracking-wide for uppercase labels"
+      },
+      "special": {
+        "font_family": "Dancing Script, cursive",
+        "usage": "Use VERY sparingly for 'signature' accents or testimonials."
+      }
+    },
+    "colors": {
+      "palette": {
+        "background": {
+          "default": "#F9F5F1",
+          "paper": "#F2EBE5",
+          "card": "#FFFFFF"
+        },
+        "text": {
+          "primary": "#2C2420",
+          "secondary": "#5D5654",
+          "muted": "#8C8582"
+        },
+        "accent": {
+          "primary": "#C5A059",
+          "secondary": "#A65D57",
+          "highlight": "#E6DCCA"
+        },
+        "system": {
+          "error": "#B91C1C",
+          "success": "#15803D"
+        }
+      },
+      "usage_rules": [
+        "Never use pure black (#000000). Use Espresso (#2C2420).",
+        "Backgrounds should be Cream (#F9F5F1), not white, to reduce eye strain and add warmth.",
+        "Use Muted Gold (#C5A059) for primary buttons and active states."
+      ]
+    },
+    "spacing": {
+      "scale": "Generous. Use p-8 to p-24 for section padding.",
+      "grid_gap": "gap-8 or gap-12 for portfolio layouts.",
+      "container_padding": "p-6 or p-8 for internal card content."
+    },
+    "visual_enhancers": {
+      "borders": "1px solid #E6DCCA (Warm Grey)",
+      "shadows": "shadow-[0_8px_30px_rgb(44,36,32,0.06)]",
+      "radius": "rounded-none for images (sharp elegance), rounded-lg for UI inputs.",
+      "overlays": "Warm gradient overlay: linear-gradient(to top, rgba(44,36,32,0.4), transparent)"
+    },
+    "layout_strategies": {
+      "hero": "Split screen or Full-bleed with 'Parallax' effect. Text must overlap image slightly.",
+      "portfolio": "Masonry Grid (Asymmetric). Mix portrait and landscape aspect ratios.",
+      "photobooth": "Horizontal 'Film Strip' marquee scrolling indefinitely.",
+      "booking": "Step-by-step wizard (Shadcn Form) centered in a clean container."
+    },
+    "motion": {
+      "entrance": "Fade up + Scale in (duration-700 ease-out).",
+      "hover": "Images scale 1.05, Grayscale to Color, or Text underline expands.",
+      "scroll": "Parallax on background images."
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#C5A059] text-white hover:bg-[#B08D4C] rounded-none px-8 py-3 tracking-widest uppercase text-xs font-semibold transition-all",
+      "secondary": "border border-[#2C2420] text-[#2C2420] hover:bg-[#2C2420] hover:text-white rounded-none px-8 py-3 tracking-widest uppercase text-xs transition-all",
+      "ghost": "text-[#2C2420] hover:text-[#C5A059] underline-offset-4 hover:underline"
+    },
+    "cards": {
+      "service": "bg-white p-8 border border-[#E6DCCA] hover:shadow-lg transition-all duration-300 group cursor-pointer",
+      "portfolio": "relative overflow-hidden group aspect-[3/4] or aspect-[4/3]"
+    },
+    "inputs": {
+      "style": "bg-transparent border-b border-[#8C8582] focus:border-[#C5A059] rounded-none px-0 py-2 focus:ring-0 placeholder:text-[#8C8582]/50"
+    },
+    "navigation": {
+      "style": "Sticky, glassmorphism with warm tint: bg-[#F9F5F1]/80 backdrop-blur-md border-b border-[#E6DCCA]/50"
+    }
+  },
+  "assets": {
+    "image_urls": {
+      "hero": {
+        "wedding": "https://images.unsplash.com/photo-1768611260851-9f9c79054757?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwzfHxlbGVnYW50JTIwd2VkZGluZyUyMHBob3RvZ3JhcGh5JTIwY291cGxlJTIwc3Vuc2V0fGVufDB8fHx8MTc3MTIwNTg4OXww&ixlib=rb-4.1.0&q=85",
+        "photobooth": "https://images.unsplash.com/photo-1746587224861-521244472226?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzl8MHwxfHNlYXJjaHwyfHxmcmllbmRzJTIwbGF1Z2hpbmclMjBwYXJ0eSUyMHBob3RvJTIwYm9vdGh8ZW58MHx8fHwxNzcxMjA1ODk4fDA&ixlib=rb-4.1.0&q=85"
+      },
+      "portfolio": [
+        "https://images.unsplash.com/photo-1761211488173-a7154314420a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHw0fHxlbGVnYW50JTIwd2VkZGluZyUyMHBob3RvZ3JhcGh5JTIwY291cGxlJTIwc3Vuc2V0fGVufDB8fHx8MTc3MTIwNTg4OXww&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1769038933022-67c6093c10af?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwyfHxlbGVnYW50JTIwd2VkZGluZyUyMHBob3RvZ3JhcGh5JTIwY291cGxlJTIwc3Vuc2V0fGVufDB8fHx8MTc3MTIwNTg4OXww&ixlib=rb-4.1.0&q=85",
+        "https://images.unsplash.com/photo-1768777272833-358b38cc41cc?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1OTV8MHwxfHNlYXJjaHwxfHxlbGVnYW50JTIwd2VkZGluZyUyMHBob3RvZ3JhcGh5JTIwY291cGxlJTIwc3Vuc2V0fGVufDB8fHx8MTc3MTIwNTg4OXww&ixlib=rb-4.1.0&q=85"
+      ]
+    },
+    "icons": {
+      "library": "lucide-react",
+      "style": "Stroke width 1.5px (Thin/Elegant)"
+    }
+  },
+  "instructions_to_main_agent": [
+    "INSTALL FONTS: Add 'Cormorant Garamond' and 'Montserrat' from Google Fonts in index.css.",
+    "TAILWIND CONFIG: Extend the theme with the colors provided in 'design_system.colors'.",
+    "THEME: Force Light Mode default (darkMode: 'class'). This brand is Light/Warm.",
+    "NAVIGATION: Create a 'Navbar' component that is sticky and changes style on scroll (transparent to glass).",
+    "PAGES: Build 'Home', 'Portfolio', 'Services', 'Booking', 'Contact', 'Admin'.",
+    "BOOKING: Use a multi-step form for booking (Date -> Service -> Details -> Payment).",
+    "ADMIN: Secure /admin route. Use a table component to manage bookings.",
+    "DO NOT use standard Shadcn rounded corners. Override radius to 0 or 0.25rem for a sharper, more premium look.",
+    "IMAGES: Use the provided URLs. For missing images, use high-quality Unsplash placeholders with keywords 'wedding', 'event', 'party'."
+  ],
+  "universal_guidelines": [
+    "Don't make generic centered layouts. Use asymmetry.",
+    "Create depth through layered design elements.",
+    "Use 2-3x more spacing than feels comfortable.",
+    "Interactive elements must have hover states.",
+    "Use 'sonner' for toasts.",
+    "Components MUST use named exports."
+  ]
+}
