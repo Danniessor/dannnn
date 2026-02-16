@@ -63,7 +63,7 @@ export const BookingPage = () => {
   };
 
   const handleDateSelect = (date) => {
-    if (!isDateDisabled(date)) {
+    if (date) {
       setFormData((prev) => ({
         ...prev,
         event_date: date,
