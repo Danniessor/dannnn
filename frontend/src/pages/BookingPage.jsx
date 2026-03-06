@@ -1,28 +1,45 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { format, isBefore, startOfToday } from "date-fns";
-import { Calendar, Clock, MapPin, User, Mail, Phone, Upload, Check, ArrowLeft, ArrowRight, Info } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, MapPin, User, Mail, Phone, Upload, Check, ArrowLeft, ArrowRight, Info, CreditCard, Copy, CheckCircle } from "lucide-react";
 import { Calendar as CalendarUI } from "../components/ui/calendar";
 import { toast } from "sonner";
 import { API } from "../App";
 
 const steps = [
-  { id: 1, title: "Select Date", icon: Calendar },
+  { id: 1, title: "Select Date", icon: CalendarIcon },
   { id: 2, title: "Choose Package", icon: Check },
   { id: 3, title: "Event Details", icon: MapPin },
-  { id: 4, title: "Payment", icon: Upload },
+  { id: 4, title: "Payment", icon: CreditCard },
 ];
+
+// Booking status display for tracking
+const STATUS_CONFIG = {
+  pending: { label: "Pending Review", color: "bg-yellow-100 text-yellow-800", description: "Your booking is awaiting review" },
+  partially_paid: { label: "Awaiting Payment Verification", color: "bg-blue-100 text-blue-800", description: "We received your payment and are verifying it" },
+  payment_review: { label: "Payment Under Review", color: "bg-purple-100 text-purple-800", description: "Your payment is being reviewed" },
+  confirmed_booked: { label: "Confirmed", color: "bg-green-100 text-green-800", description: "Your booking is confirmed!" },
+  rejected: { label: "Rejected", color: "bg-red-100 text-red-800", description: "Your booking was not approved" },
+  cancelled: { label: "Cancelled", color: "bg-gray-100 text-gray-800", description: "This booking has been cancelled" },
+};
 
 export const BookingPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [currentStep, setCurrentStep] = useState(1);
   const [packages, setPackages] = useState([]);
-  const [bookedDates, setBookedDates] = useState([]);
+  const [bookedDates, setBookedDates] = useState({ booked: [], pending: [] });
+  const [paymentMethods, setPaymentMethods] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bookingComplete, setBookingComplete] = useState(false);
   const [bookingId, setBookingId] = useState(null);
+  const [copiedField, setCopiedField] = useState(null);
+
+  // Track booking status
+  const [trackingMode, setTrackingMode] = useState(false);
+  const [trackingId, setTrackingId] = useState("");
+  const [bookingStatus, setBookingStatus] = useState(null);
 
   const [formData, setFormData] = useState({
     event_date: null,
@@ -34,6 +51,10 @@ export const BookingPage = () => {
     event_type: "",
     venue: "",
     special_requests: "",
+    // Payment fields
+    payment_method_id: "",
+    payment_amount: "",
+    transaction_ref: "",
     payment_proof: null,
   });
 
@@ -41,10 +62,12 @@ export const BookingPage = () => {
     Promise.all([
       fetch(`${API}/packages`).then((res) => res.json()),
       fetch(`${API}/booked-dates`).then((res) => res.json()),
+      fetch(`${API}/payment-methods`).then((res) => res.json()),
     ])
-      .then(([pkgData, dates]) => {
+      .then(([pkgData, dates, pmData]) => {
         setPackages(pkgData);
         setBookedDates(dates);
+        setPaymentMethods(pmData);
         setIsLoading(false);
       })
       .catch((err) => {
@@ -54,12 +77,19 @@ export const BookingPage = () => {
   }, []);
 
   const selectedPackage = packages.find((p) => p.package_id === formData.package_id);
+  const selectedPaymentMethod = paymentMethods.find((m) => m.method_id === formData.payment_method_id);
 
   const isDateDisabled = (date) => {
     const today = startOfToday();
     if (isBefore(date, today)) return true;
     const dateStr = format(date, "yyyy-MM-dd");
-    return bookedDates.includes(dateStr);
+    // Only block confirmed dates
+    return bookedDates.booked?.includes(dateStr);
+  };
+
+  const isDatePending = (date) => {
+    const dateStr = format(date, "yyyy-MM-dd");
+    return bookedDates.pending?.includes(dateStr);
   };
 
   const handleDateSelect = (date) => {
@@ -79,8 +109,25 @@ export const BookingPage = () => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (file) {
+      // Validate file type
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp", "application/pdf"];
+      if (!allowedTypes.includes(file.type)) {
+        toast.error("Invalid file type. Please upload JPG, PNG, WebP or PDF");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error("File too large. Maximum 10MB allowed");
+        return;
+      }
       setFormData((prev) => ({ ...prev, payment_proof: file }));
     }
+  };
+
+  const copyToClipboard = (text, field) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    toast.success("Copied to clipboard!");
+    setTimeout(() => setCopiedField(null), 2000);
   };
 
   const canProceed = () => {
@@ -99,16 +146,16 @@ export const BookingPage = () => {
           formData.event_time
         );
       case 4:
-        return true; // Payment proof is optional initially
+        return formData.payment_method_id && formData.payment_amount && formData.payment_proof;
       default:
         return false;
     }
   };
 
-  const handleSubmit = async () => {
+  const handleSubmitBooking = async () => {
     setIsSubmitting(true);
     try {
-      // Create booking
+      // Step 1: Create booking
       const bookingResponse = await fetch(`${API}/bookings`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -131,17 +178,26 @@ export const BookingPage = () => {
       }
 
       const bookingData = await bookingResponse.json();
-      setBookingId(bookingData.booking_id);
+      const newBookingId = bookingData.booking_id;
+      setBookingId(newBookingId);
 
-      // Upload payment proof if provided
-      if (formData.payment_proof) {
-        const formDataUpload = new FormData();
-        formDataUpload.append("file", formData.payment_proof);
+      // Step 2: Submit payment proof
+      const paymentFormData = new FormData();
+      paymentFormData.append("payment_method_id", formData.payment_method_id);
+      paymentFormData.append("amount", formData.payment_amount);
+      if (formData.transaction_ref) {
+        paymentFormData.append("transaction_ref", formData.transaction_ref);
+      }
+      paymentFormData.append("file", formData.payment_proof);
 
-        await fetch(`${API}/bookings/${bookingData.booking_id}/upload-payment`, {
-          method: "POST",
-          body: formDataUpload,
-        });
+      const paymentResponse = await fetch(`${API}/bookings/${newBookingId}/payment`, {
+        method: "POST",
+        body: paymentFormData,
+      });
+
+      if (!paymentResponse.ok) {
+        // Booking created but payment upload failed
+        toast.warning("Booking created but payment upload failed. Please contact support.");
       }
 
       setBookingComplete(true);
@@ -153,6 +209,25 @@ export const BookingPage = () => {
     }
   };
 
+  const handleTrackBooking = async () => {
+    if (!trackingId.trim()) {
+      toast.error("Please enter a booking ID");
+      return;
+    }
+    
+    try {
+      const response = await fetch(`${API}/bookings/${trackingId}/status`);
+      if (!response.ok) {
+        throw new Error("Booking not found");
+      }
+      const data = await response.json();
+      setBookingStatus(data);
+    } catch (error) {
+      toast.error(error.message);
+      setBookingStatus(null);
+    }
+  };
+
   const formatPrice = (price) => {
     return new Intl.NumberFormat("en-PH", {
       style: "currency",
@@ -161,13 +236,14 @@ export const BookingPage = () => {
     }).format(price);
   };
 
+  // Booking Complete View
   if (bookingComplete) {
     return (
       <main data-testid="booking-complete" className="pt-24 min-h-screen bg-cream">
         <div className="container-custom px-6 py-20">
           <div className="max-w-lg mx-auto bg-white p-10 border border-warm-grey text-center">
             <div className="w-16 h-16 bg-gold/10 rounded-full flex items-center justify-center mx-auto mb-6">
-              <Check className="w-8 h-8 text-gold" />
+              <CheckCircle className="w-8 h-8 text-gold" />
             </div>
             <h2 className="font-heading text-3xl text-espresso mb-4">
               Booking Submitted!
@@ -175,19 +251,125 @@ export const BookingPage = () => {
             <p className="font-body text-sm text-espresso-light mb-6">
               Thank you for your booking request. Your booking ID is:
             </p>
-            <div className="bg-cream-dark px-4 py-2 mb-6">
-              <code className="font-body text-sm text-gold">{bookingId}</code>
+            <div className="bg-cream-dark px-4 py-3 mb-6 flex items-center justify-center gap-2">
+              <code className="font-body text-sm text-gold font-medium">{bookingId}</code>
+              <button
+                onClick={() => copyToClipboard(bookingId, "bookingId")}
+                className="p-1 hover:bg-cream rounded"
+              >
+                {copiedField === "bookingId" ? <Check size={16} className="text-green-600" /> : <Copy size={16} className="text-muted-text" />}
+              </button>
             </div>
-            <p className="font-body text-sm text-espresso-light mb-8">
-              We will review your booking and payment proof. You will receive a 
-              confirmation email once your booking is approved.
-            </p>
-            <button
-              onClick={() => navigate("/")}
-              className="btn-primary"
-            >
-              Back to Home
-            </button>
+            <div className="bg-blue-50 border border-blue-200 p-4 mb-6 text-left">
+              <p className="font-body text-sm text-blue-800 font-medium mb-2">What happens next?</p>
+              <ul className="font-body text-xs text-blue-700 space-y-1">
+                <li>• Our team will review your payment proof</li>
+                <li>• You'll receive a confirmation once approved</li>
+                <li>• The date will be locked in our calendar</li>
+                <li>• Save your booking ID to track status</li>
+              </ul>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+              <button
+                onClick={() => navigate("/")}
+                className="btn-secondary"
+              >
+                Back to Home
+              </button>
+              <button
+                onClick={() => {
+                  setBookingComplete(false);
+                  setTrackingMode(true);
+                  setTrackingId(bookingId);
+                }}
+                className="btn-primary"
+              >
+                Track Booking
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // Tracking Mode View
+  if (trackingMode) {
+    return (
+      <main data-testid="booking-tracking" className="pt-24 min-h-screen bg-cream">
+        <div className="container-custom px-6 py-20">
+          <div className="max-w-lg mx-auto">
+            <div className="bg-white p-8 border border-warm-grey mb-6">
+              <h2 className="font-heading text-2xl text-espresso mb-6 text-center">
+                Track Your Booking
+              </h2>
+              <div className="flex gap-2 mb-6">
+                <input
+                  type="text"
+                  value={trackingId}
+                  onChange={(e) => setTrackingId(e.target.value)}
+                  placeholder="Enter your booking ID"
+                  className="flex-1 px-4 py-3 border border-warm-grey focus:border-gold outline-none font-body text-sm"
+                  data-testid="tracking-input"
+                />
+                <button
+                  onClick={handleTrackBooking}
+                  className="btn-primary"
+                  data-testid="track-btn"
+                >
+                  Track
+                </button>
+              </div>
+
+              {bookingStatus && (
+                <div className="border border-warm-grey p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="font-body text-xs text-muted-text uppercase tracking-wider">Status</span>
+                    <span className={`px-3 py-1 text-xs font-medium rounded ${STATUS_CONFIG[bookingStatus.status]?.color || "bg-gray-100 text-gray-800"}`}>
+                      {STATUS_CONFIG[bookingStatus.status]?.label || bookingStatus.status}
+                    </span>
+                  </div>
+                  <p className="font-body text-sm text-espresso-light mb-4">
+                    {STATUS_CONFIG[bookingStatus.status]?.description}
+                  </p>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-muted-text">Event Date</p>
+                      <p className="text-espresso font-medium">{bookingStatus.event_date}</p>
+                    </div>
+                    <div>
+                      <p className="text-muted-text">Booking ID</p>
+                      <p className="text-gold font-mono text-xs">{bookingStatus.booking_id}</p>
+                    </div>
+                  </div>
+                  {bookingStatus.payments?.length > 0 && (
+                    <div className="mt-4 pt-4 border-t border-warm-grey">
+                      <p className="text-muted-text text-xs mb-2">Payments</p>
+                      {bookingStatus.payments.map((p, i) => (
+                        <div key={i} className="flex justify-between text-sm">
+                          <span>{formatPrice(p.amount)}</span>
+                          <span className={`text-xs ${p.status === "approved" ? "text-green-600" : p.status === "rejected" ? "text-red-600" : "text-yellow-600"}`}>
+                            {p.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="text-center">
+              <button
+                onClick={() => {
+                  setTrackingMode(false);
+                  setBookingStatus(null);
+                }}
+                className="font-body text-sm text-gold hover:underline"
+              >
+                ← Back to New Booking
+              </button>
+            </div>
           </div>
         </div>
       </main>
@@ -202,9 +384,16 @@ export const BookingPage = () => {
           <p className="font-body text-xs uppercase tracking-[0.3em] text-gold mb-4">
             Reserve Your Date
           </p>
-          <h1 className="font-heading text-4xl lg:text-5xl text-espresso">
+          <h1 className="font-heading text-4xl lg:text-5xl text-espresso mb-4">
             Book Our Services
           </h1>
+          <button
+            onClick={() => setTrackingMode(true)}
+            className="font-body text-sm text-gold hover:underline"
+            data-testid="track-booking-link"
+          >
+            Already have a booking? Track status →
+          </button>
         </div>
       </section>
 
@@ -266,22 +455,46 @@ export const BookingPage = () => {
                   <h2 className="font-heading text-2xl text-espresso mb-2">
                     Select Your Event Date
                   </h2>
-                  <p className="font-body text-sm text-espresso-light mb-8">
-                    Choose an available date for your event. Greyed out dates are 
-                    already booked.
+                  <p className="font-body text-sm text-espresso-light mb-4">
+                    Choose an available date for your event.
                   </p>
+                  <div className="flex flex-wrap gap-4 mb-6 text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-green-100 border border-green-300"></div>
+                      <span className="text-muted-text">Available</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-yellow-100 border border-yellow-300"></div>
+                      <span className="text-muted-text">Pending</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 bg-gray-200 border border-gray-300"></div>
+                      <span className="text-muted-text">Booked</span>
+                    </div>
+                  </div>
                   <div className="flex justify-center">
                     <CalendarUI
                       mode="single"
                       selected={formData.event_date}
                       onSelect={handleDateSelect}
                       disabled={isDateDisabled}
+                      modifiers={{
+                        pending: (date) => isDatePending(date),
+                      }}
+                      modifiersStyles={{
+                        pending: { backgroundColor: "#FEF3C7", color: "#92400E" },
+                      }}
                       className="rounded-none border border-warm-grey"
                     />
                   </div>
                   {formData.event_date && (
                     <p className="text-center mt-6 font-body text-sm text-gold">
                       Selected: {format(formData.event_date, "MMMM d, yyyy")}
+                      {isDatePending(formData.event_date) && (
+                        <span className="block text-xs text-yellow-600 mt-1">
+                          Note: This date has a pending booking
+                        </span>
+                      )}
                     </p>
                   )}
                 </div>
@@ -316,22 +529,41 @@ export const BookingPage = () => {
                           className="mt-1 accent-gold"
                         />
                         <div className="flex-grow">
-                          <div className="flex justify-between items-start">
+                          <div className="flex justify-between items-start flex-wrap gap-2">
                             <div>
                               <h3 className="font-heading text-lg text-espresso">
                                 {pkg.name}
                               </h3>
                               <p className="font-body text-xs uppercase tracking-wider text-gold">
-                                {pkg.category}
+                                {pkg.category} {pkg.duration && `• ${pkg.duration}`}
                               </p>
                             </div>
-                            <span className="font-heading text-xl text-gold">
-                              {formatPrice(pkg.price)}
-                            </span>
+                            <div className="text-right">
+                              <span className="font-heading text-xl text-gold block">
+                                {formatPrice(pkg.price)}
+                              </span>
+                              <span className="font-body text-xs text-muted-text">
+                                Downpayment: {formatPrice(pkg.downpayment_amount || pkg.price * 0.5)}
+                              </span>
+                            </div>
                           </div>
                           <p className="font-body text-sm text-espresso-light mt-2">
                             {pkg.description}
                           </p>
+                          {pkg.inclusions && pkg.inclusions.length > 0 && (
+                            <ul className="mt-3 space-y-1">
+                              {pkg.inclusions.slice(0, 4).map((inc, i) => (
+                                <li key={i} className="flex items-center gap-2 text-xs text-espresso-light">
+                                  <Check size={12} className="text-gold" /> {inc}
+                                </li>
+                              ))}
+                              {pkg.inclusions.length > 4 && (
+                                <li className="text-xs text-muted-text">
+                                  +{pkg.inclusions.length - 4} more inclusions
+                                </li>
+                              )}
+                            </ul>
+                          )}
                         </div>
                       </label>
                     ))}
@@ -478,7 +710,7 @@ export const BookingPage = () => {
                     Payment Details
                   </h2>
                   <p className="font-body text-sm text-espresso-light mb-8">
-                    Please send your downpayment to secure your booking.
+                    Please send your downpayment and upload proof to secure your booking.
                   </p>
 
                   {/* Booking Summary */}
@@ -489,7 +721,7 @@ export const BookingPage = () => {
                     <div className="space-y-2 font-body text-sm">
                       <div className="flex justify-between">
                         <span className="text-espresso-light">Date:</span>
-                        <span className="text-espresso">
+                        <span className="text-espresso font-medium">
                           {format(formData.event_date, "MMMM d, yyyy")}
                         </span>
                       </div>
@@ -499,111 +731,203 @@ export const BookingPage = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-espresso-light">Package:</span>
-                        <span className="text-espresso">
-                          {selectedPackage?.name}
-                        </span>
+                        <span className="text-espresso">{selectedPackage?.name}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-espresso-light">Event Type:</span>
-                        <span className="text-espresso capitalize">
-                          {formData.event_type}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-espresso-light">Venue:</span>
-                        <span className="text-espresso">{formData.venue}</span>
+                        <span className="text-espresso capitalize">{formData.event_type}</span>
                       </div>
                       <div className="border-t border-warm-grey pt-2 mt-4">
                         <div className="flex justify-between">
-                          <span className="text-espresso font-medium">
-                            Total Amount:
-                          </span>
+                          <span className="text-espresso font-medium">Total Amount:</span>
                           <span className="font-heading text-xl text-gold">
                             {selectedPackage && formatPrice(selectedPackage.price)}
                           </span>
                         </div>
                         <div className="flex justify-between mt-1">
-                          <span className="text-espresso-light">
-                            Required Downpayment (50%):
-                          </span>
-                          <span className="text-gold">
-                            {selectedPackage &&
-                              formatPrice(selectedPackage.price * 0.5)}
+                          <span className="text-espresso-light">Required Downpayment:</span>
+                          <span className="text-gold font-medium">
+                            {selectedPackage && formatPrice(selectedPackage.downpayment_amount || selectedPackage.price * 0.5)}
                           </span>
                         </div>
                       </div>
                     </div>
                   </div>
 
-                  {/* Payment Info */}
-                  <div className="bg-white border border-warm-grey p-6 mb-8">
-                    <div className="flex items-start gap-3 mb-4">
-                      <Info size={20} className="text-gold mt-0.5" />
-                      <div>
-                        <h4 className="font-heading text-lg text-espresso">
-                          Payment Instructions
-                        </h4>
-                        <p className="font-body text-sm text-espresso-light">
-                          Please send your downpayment via any of the following:
-                        </p>
+                  {/* Payment Method Selection */}
+                  <div className="mb-8">
+                    <label className="block font-body text-xs uppercase tracking-wider text-espresso-light mb-4">
+                      Select Payment Method *
+                    </label>
+                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {paymentMethods.map((method) => (
+                        <label
+                          key={method.method_id}
+                          className={`p-4 border cursor-pointer transition-all ${
+                            formData.payment_method_id === method.method_id
+                              ? "border-gold bg-gold/5"
+                              : "border-warm-grey hover:border-gold/50"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="payment_method_id"
+                            value={method.method_id}
+                            checked={formData.payment_method_id === method.method_id}
+                            onChange={handleInputChange}
+                            className="sr-only"
+                          />
+                          <div className="flex items-center gap-3">
+                            <CreditCard size={20} className={formData.payment_method_id === method.method_id ? "text-gold" : "text-muted-text"} />
+                            <span className="font-body text-sm font-medium text-espresso">{method.name}</span>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Payment Details Display */}
+                  {selectedPaymentMethod && (
+                    <div className="bg-white border border-gold p-6 mb-8">
+                      <div className="flex items-start gap-3 mb-4">
+                        <Info size={20} className="text-gold mt-0.5" />
+                        <div>
+                          <h4 className="font-heading text-lg text-espresso">
+                            {selectedPaymentMethod.name} Payment Details
+                          </h4>
+                          <p className="font-body text-sm text-espresso-light">
+                            Send payment to the details below
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* QR Code */}
+                      {selectedPaymentMethod.method_type === "qr" && selectedPaymentMethod.qr_image_path && (
+                        <div className="flex justify-center mb-4">
+                          <img
+                            src={`${API}/public-uploads/qr_codes/${selectedPaymentMethod.qr_image_path.split("/").pop()}`}
+                            alt="Payment QR Code"
+                            className="max-w-48 border border-warm-grey"
+                          />
+                        </div>
+                      )}
+
+                      {/* Account Details */}
+                      <div className="space-y-3">
+                        {selectedPaymentMethod.account_name && (
+                          <div className="flex justify-between items-center p-3 bg-cream-dark">
+                            <div>
+                              <p className="font-body text-xs text-muted-text">Account Name</p>
+                              <p className="font-body text-sm text-espresso font-medium">{selectedPaymentMethod.account_name}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(selectedPaymentMethod.account_name, "account_name")}
+                              className="p-2 hover:bg-cream rounded"
+                            >
+                              {copiedField === "account_name" ? <Check size={16} className="text-green-600" /> : <Copy size={16} className="text-muted-text" />}
+                            </button>
+                          </div>
+                        )}
+                        {selectedPaymentMethod.account_number && (
+                          <div className="flex justify-between items-center p-3 bg-cream-dark">
+                            <div>
+                              <p className="font-body text-xs text-muted-text">
+                                {selectedPaymentMethod.method_type === "bank_details" ? "Account Number" : "Number"}
+                              </p>
+                              <p className="font-body text-sm text-espresso font-medium font-mono">{selectedPaymentMethod.account_number}</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => copyToClipboard(selectedPaymentMethod.account_number, "account_number")}
+                              className="p-2 hover:bg-cream rounded"
+                            >
+                              {copiedField === "account_number" ? <Check size={16} className="text-green-600" /> : <Copy size={16} className="text-muted-text" />}
+                            </button>
+                          </div>
+                        )}
+                        {selectedPaymentMethod.bank_name && (
+                          <div className="flex justify-between items-center p-3 bg-cream-dark">
+                            <div>
+                              <p className="font-body text-xs text-muted-text">Bank</p>
+                              <p className="font-body text-sm text-espresso font-medium">{selectedPaymentMethod.bank_name}</p>
+                            </div>
+                          </div>
+                        )}
+                        {selectedPaymentMethod.instructions_text && (
+                          <div className="p-3 bg-blue-50 border border-blue-200">
+                            <p className="font-body text-xs text-blue-800">{selectedPaymentMethod.instructions_text}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="space-y-4 pl-8">
-                      <div>
-                        <p className="font-body text-sm font-medium text-espresso">
-                          Bank Transfer (BDO)
-                        </p>
-                        <p className="font-body text-sm text-espresso-light">
-                          Account Name: Rina Visuals Corp.
-                        </p>
-                        <p className="font-body text-sm text-espresso-light">
-                          Account Number: 1234-5678-9012
-                        </p>
-                      </div>
-                      <div>
-                        <p className="font-body text-sm font-medium text-espresso">
-                          GCash
-                        </p>
-                        <p className="font-body text-sm text-espresso-light">
-                          Number: 0917-123-4567
-                        </p>
-                        <p className="font-body text-sm text-espresso-light">
-                          Name: Rina Santos
-                        </p>
-                      </div>
+                  )}
+
+                  {/* Payment Amount */}
+                  <div className="grid md:grid-cols-2 gap-6 mb-6">
+                    <div>
+                      <label className="block font-body text-xs uppercase tracking-wider text-espresso-light mb-2">
+                        Amount Paid *
+                      </label>
+                      <input
+                        type="number"
+                        name="payment_amount"
+                        value={formData.payment_amount}
+                        onChange={handleInputChange}
+                        data-testid="input-payment-amount"
+                        min="0"
+                        step="0.01"
+                        className="w-full px-4 py-3 border border-warm-grey focus:border-gold outline-none font-body text-sm"
+                        placeholder={selectedPackage ? (selectedPackage.downpayment_amount || selectedPackage.price * 0.5).toString() : "Enter amount"}
+                      />
+                    </div>
+                    <div>
+                      <label className="block font-body text-xs uppercase tracking-wider text-espresso-light mb-2">
+                        Transaction Reference (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        name="transaction_ref"
+                        value={formData.transaction_ref}
+                        onChange={handleInputChange}
+                        data-testid="input-transaction-ref"
+                        className="w-full px-4 py-3 border border-warm-grey focus:border-gold outline-none font-body text-sm"
+                        placeholder="e.g., GCash Reference Number"
+                      />
                     </div>
                   </div>
 
                   {/* Upload Proof */}
                   <div>
                     <label className="block font-body text-xs uppercase tracking-wider text-espresso-light mb-2">
-                      Upload Payment Proof (Optional - can be uploaded later)
+                      Upload Payment Proof *
                     </label>
-                    <div className="border-2 border-dashed border-warm-grey p-8 text-center">
+                    <div className={`border-2 border-dashed p-8 text-center transition-colors ${formData.payment_proof ? "border-gold bg-gold/5" : "border-warm-grey"}`}>
                       <input
                         type="file"
-                        accept="image/*"
+                        accept="image/jpeg,image/png,image/webp,application/pdf"
                         onChange={handleFileChange}
                         data-testid="input-payment-proof"
                         className="hidden"
                         id="payment-proof"
                       />
-                      <label
-                        htmlFor="payment-proof"
-                        className="cursor-pointer block"
-                      >
-                        <Upload size={32} className="mx-auto text-muted-text mb-4" />
+                      <label htmlFor="payment-proof" className="cursor-pointer block">
                         {formData.payment_proof ? (
-                          <p className="font-body text-sm text-gold">
-                            {formData.payment_proof.name}
-                          </p>
+                          <div className="flex items-center justify-center gap-3">
+                            <CheckCircle size={24} className="text-gold" />
+                            <div>
+                              <p className="font-body text-sm text-gold font-medium">{formData.payment_proof.name}</p>
+                              <p className="font-body text-xs text-muted-text">Click to change</p>
+                            </div>
+                          </div>
                         ) : (
                           <>
+                            <Upload size={32} className="mx-auto text-muted-text mb-4" />
                             <p className="font-body text-sm text-espresso">
                               Click to upload payment screenshot
                             </p>
                             <p className="font-body text-xs text-muted-text mt-1">
-                              PNG, JPG up to 10MB
+                              JPG, PNG, WebP or PDF (max 10MB)
                             </p>
                           </>
                         )}
@@ -639,10 +963,12 @@ export const BookingPage = () => {
                   </button>
                 ) : (
                   <button
-                    onClick={handleSubmit}
-                    disabled={isSubmitting}
+                    onClick={handleSubmitBooking}
+                    disabled={isSubmitting || !canProceed()}
                     data-testid="btn-submit"
-                    className="btn-primary flex items-center gap-2"
+                    className={`btn-primary flex items-center gap-2 ${
+                      !canProceed() ? "opacity-50 cursor-not-allowed" : ""
+                    }`}
                   >
                     {isSubmitting ? (
                       <>

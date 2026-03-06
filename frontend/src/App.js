@@ -109,7 +109,9 @@ const ProtectedRoute = ({ children }) => {
     const verify = async () => {
       try {
         const authUser = await checkAuth();
-        if (authUser && authUser.role === "admin") {
+        // Allow worker, admin, and super_admin roles
+        const allowedRoles = ["worker", "admin", "super_admin"];
+        if (authUser && allowedRoles.includes(authUser.role)) {
           setIsAuthenticated(true);
         } else {
           setIsAuthenticated(false);

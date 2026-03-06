@@ -26,7 +26,8 @@ export const LoginPage = () => {
     try {
       const user = await login(formData.email, formData.password);
       toast.success("Login successful!");
-      if (user.role === "admin") {
+      // Redirect admin roles to dashboard
+      if (user.role === "admin" || user.role === "super_admin" || user.role === "worker") {
         navigate("/admin");
       } else {
         navigate("/");
